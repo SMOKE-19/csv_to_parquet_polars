@@ -61,14 +61,16 @@ python -m build
 
 ```bash
 python - <<'PY'
+import polars as pl
+
 from csv_to_parquet import convert_csv_to_parquet_simple
 
 result = convert_csv_to_parquet_simple(
     input_csv_path="/tmp/input.csv",
     output_parquet_dir="/tmp/out",
     column_type_map={
-        "code": "string",
-        "amount": "float32",
+        "code": pl.String,
+        "amount": pl.Float32,
     },
     index_source_column="code",
 )

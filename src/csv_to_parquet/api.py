@@ -19,17 +19,6 @@ from .models import (
 
 SUPPORTED_DELIMITERS = {",", "\t", "|", ";"}
 SUPPORTED_COMPRESSIONS = {"snappy", "zstd", "none"}
-SUPPORTED_TYPES = {
-    "string",
-    "bool",
-    "int64",
-    "float64",
-    "float32",
-    "uint16",
-    "uint8",
-    "date32",
-    "timestamp_ms",
-}
 DEFAULT_NULL_LIKE_VALUES = {"", "null", "nan", "n/a"}
 SOURCE_COLUMN_NAME = "__source"
 INDEX_A_COLUMN_NAME = "index_A"
@@ -60,7 +49,7 @@ def convert_csv_to_parquet(
 def convert_csv_to_parquet_simple(
     input_csv_path: str | Path,
     output_parquet_dir: str | Path,
-    column_type_map: dict[str, str],
+    column_type_map: dict[str, pl.DataType],
     *,
     exclude_columns: list[str] | None = None,
     index_source_column: str,
@@ -218,11 +207,11 @@ def _transform_batch(
     )
 
     transformed_columns: list[pl.Expr] = []
-    failure_specs: list[tuple[str, str, pl.Expr, pl.Expr]] = []
+    failure_specs: list[tuple[str, pl.DataType, pl.Expr, pl.Expr]] = []
     for column_name in normalized_headers:
         if column_name in effective_exclude:
             continue
-        target_type = payload["column_type_map"].get(column_name, "float32")
+        target_type = payload["column_type_map"].get(column_name, pl.Float32)
         casted, null_mask, failure_mask = _build_cast_expr(column_name, target_type)
         transformed_columns.append(casted.alias(column_name))
         failure_specs.append((column_name, target_type, null_mask, failure_mask))
@@ -252,7 +241,7 @@ def _transform_batch(
                     "row_number": row[ROW_NUMBER_COLUMN_NAME],
                     "column_name": derived_name,
                     "raw_value": row[index_source] or "",
-                    "target_type": "string",
+                    "target_type": str(pl.String),
                     "reason": "derived_prefix_too_short",
                 }
             )
@@ -275,7 +264,7 @@ def _transform_batch(
                     "row_number": row[ROW_NUMBER_COLUMN_NAME],
                     "column_name": column_name,
                     "raw_value": row["__raw_value__"] or "",
-                    "target_type": target_type,
+                    "target_type": str(target_type),
                     "reason": "parse_error",
                 }
             )
@@ -286,40 +275,14 @@ def _transform_batch(
     return transformed, debug_payload
 
 
-def _build_cast_expr(column_name: str, target_type: str) -> tuple[pl.Expr, pl.Expr, pl.Expr]:
+def _build_cast_expr(
+    column_name: str,
+    target_type: pl.DataType,
+) -> tuple[pl.Expr, pl.Expr, pl.Expr]:
     source = pl.col(column_name)
     lower = source.str.to_lowercase()
     null_mask = source.is_null() | (source == "") | lower.is_in(list(DEFAULT_NULL_LIKE_VALUES))
-
-    if target_type == "string":
-        casted = source
-    elif target_type == "bool":
-        true_values = ["true", "1", "y", "yes"]
-        false_values = ["false", "0", "n", "no"]
-        casted = (
-            pl.when(lower.is_in(true_values))
-            .then(pl.lit(True))
-            .when(lower.is_in(false_values))
-            .then(pl.lit(False))
-            .otherwise(None)
-        )
-    elif target_type == "int64":
-        casted = source.cast(pl.Int64, strict=False)
-    elif target_type == "float64":
-        casted = source.cast(pl.Float64, strict=False)
-    elif target_type == "float32":
-        casted = source.cast(pl.Float32, strict=False)
-    elif target_type == "uint16":
-        casted = source.cast(pl.UInt16, strict=False)
-    elif target_type == "uint8":
-        casted = source.cast(pl.UInt8, strict=False)
-    elif target_type == "date32":
-        casted = source.str.strptime(pl.Date, "%Y-%m-%d", strict=False)
-    elif target_type == "timestamp_ms":
-        casted = source.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M:%S", strict=False)
-    else:
-        raise ConfigValidationError(f"unsupported type '{target_type}'")
-
+    casted = source.cast(target_type, strict=False)
     failure_mask = (~null_mask) & casted.is_null()
     return casted, null_mask, failure_mask
 
@@ -419,19 +382,20 @@ def _normalize_output_dir(value: str | Path, options: OutputPathOptions) -> Path
     return path
 
 
-def _normalize_column_type_map(column_type_map: dict[str, str]) -> dict[str, str]:
+def _normalize_column_type_map(
+    column_type_map: dict[str, pl.DataType],
+) -> dict[str, pl.DataType]:
     if not column_type_map:
         raise ConfigValidationError("column_type_map must not be empty")
 
-    normalized: dict[str, str] = {}
-    for column_name, type_name in column_type_map.items():
+    normalized: dict[str, pl.DataType] = {}
+    for column_name, dtype in column_type_map.items():
         _require_non_empty("column_type_map key", column_name)
-        normalized_type = type_name.strip().lower()
-        if normalized_type not in SUPPORTED_TYPES:
+        if not pl.datatypes.is_polars_dtype(dtype):
             raise ConfigValidationError(
-                f"unsupported type '{type_name}' for column '{column_name}'"
+                f"column_type_map['{column_name}'] must be a Polars dtype"
             )
-        normalized[column_name] = normalized_type
+        normalized[column_name] = dtype
     return normalized
 
 

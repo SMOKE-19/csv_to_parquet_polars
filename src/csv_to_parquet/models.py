@@ -4,19 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-TypeName = Literal[
-    "string",
-    "bool",
-    "int64",
-    "float64",
-    "float32",
-    "uint16",
-    "uint8",
-    "date32",
-    "timestamp_ms",
-]
+import polars as pl
 
 CompressionName = Literal["snappy", "zstd", "none"]
+PolarsType = pl.DataType
 
 
 @dataclass(slots=True)
@@ -29,7 +20,7 @@ class OutputPathOptions:
 class ConvertCsvToParquetRequest:
     input_csv_path: str | Path
     output_parquet_dir: str | Path
-    column_type_map: dict[str, TypeName]
+    column_type_map: dict[str, PolarsType]
     exclude_columns: list[str]
     index_source_column: str
     output_path_options: OutputPathOptions = field(default_factory=OutputPathOptions)

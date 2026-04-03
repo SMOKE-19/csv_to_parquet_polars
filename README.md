@@ -17,8 +17,8 @@ Python `polars` 기반 CSV -> Parquet 변환 패키지다.
   - header 읽기
   - delimiter 자동 판별
   - 중복 header rename
-  - `column_type_map` 기반 캐스팅
-  - 미지정 컬럼 `float32`
+  - `column_type_map`에 전달한 Polars dtype 기반 캐스팅
+  - 미지정 컬럼 `pl.Float32`
   - cast failure 디버그 수집
   - `__source`, `index_A`, `index_B` 생성
 
