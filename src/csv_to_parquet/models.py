@@ -32,7 +32,6 @@ class ConvertCsvToParquetRequest:
     column_type_map: dict[str, TypeName]
     exclude_columns: list[str]
     index_source_column: str
-    memory_limit: str
     output_path_options: OutputPathOptions = field(default_factory=OutputPathOptions)
     delimiter: str | None = None
     compression: CompressionName = "snappy"

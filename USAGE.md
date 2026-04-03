@@ -24,7 +24,6 @@ result = convert_csv_to_parquet_simple(
     },
     exclude_columns=["debug_col", "tmp_col"],
     index_source_column="code",
-    memory_limit="4 GB",
 )
 
 print(result.output_parquet_dir)
@@ -47,7 +46,6 @@ convert_csv_to_parquet_simple(
     *,
     exclude_columns=None,
     index_source_column,
-    memory_limit,
     output_path_options=None,
     delimiter=None,
     compression="snappy",
@@ -74,9 +72,6 @@ convert_csv_to_parquet_simple(
   - Parquet 출력에서 제외할 컬럼 목록
 - `index_source_column`
   - `index_A`, `index_B` 생성 기준 컬럼
-- `memory_limit`
-  - 현재 형식 검증만 수행한다
-  - 예: `"4 GB"`, `"512 MB"`, `"1024 KB"`
 - `output_path_options`
   - 출력 루트 디렉터리 생성 옵션
 - `delimiter`
@@ -101,7 +96,6 @@ result = convert_csv_to_parquet_simple(
     output_parquet_dir="/data/new_dir",
     column_type_map={"code": "string", "amount": "float32"},
     index_source_column="code",
-    memory_limit="4 GB",
     output_path_options=OutputPathOptions(
         create_parent_dirs=True,
         exist_ok=True,
@@ -180,7 +174,6 @@ try:
         output_parquet_dir="/data/out",
         column_type_map={"code": "string", "amount": "float32"},
         index_source_column="code",
-        memory_limit="4 GB",
     )
 except ConfigValidationError as exc:
     print(f"invalid request: {exc}")

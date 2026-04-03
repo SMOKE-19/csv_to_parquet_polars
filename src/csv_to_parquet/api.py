@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import csv
-import re
 import shutil
 import time
 
@@ -32,14 +31,6 @@ SUPPORTED_TYPES = {
     "timestamp_ms",
 }
 DEFAULT_NULL_LIKE_VALUES = {"", "null", "nan", "n/a"}
-MEMORY_LIMIT_RE = re.compile(r"^\s*(\d+)\s*(B|KB|MB|GB|TB)\s*$", re.IGNORECASE)
-UNIT_TO_BYTES = {
-    "B": 1,
-    "KB": 1024,
-    "MB": 1024**2,
-    "GB": 1024**3,
-    "TB": 1024**4,
-}
 SOURCE_COLUMN_NAME = "__source"
 INDEX_A_COLUMN_NAME = "index_A"
 INDEX_B_COLUMN_NAME = "index_B"
@@ -73,7 +64,6 @@ def convert_csv_to_parquet_simple(
     *,
     exclude_columns: list[str] | None = None,
     index_source_column: str,
-    memory_limit: str,
     output_path_options: OutputPathOptions | None = None,
     delimiter: str | None = None,
     compression: str = "snappy",
@@ -90,7 +80,6 @@ def convert_csv_to_parquet_simple(
         column_type_map=column_type_map,
         exclude_columns=exclude_columns or [],
         index_source_column=index_source_column,
-        memory_limit=memory_limit,
         output_path_options=output_path_options or OutputPathOptions(),
         delimiter=delimiter,
         compression=compression,
@@ -380,7 +369,6 @@ def _normalize_request(request: ConvertCsvToParquetRequest) -> dict:
         request.index_source_column,
     )
     delimiter = _normalize_delimiter(request.delimiter)
-    memory_limit_bytes = _parse_memory_limit(request.memory_limit)
 
     _require_non_empty("index_source_column", request.index_source_column)
     _require_positive("max_rows_per_chunk", request.max_rows_per_chunk)
@@ -399,8 +387,6 @@ def _normalize_request(request: ConvertCsvToParquetRequest) -> dict:
         "column_type_map": column_type_map,
         "exclude_columns": exclude_columns,
         "index_source_column": request.index_source_column,
-        "memory_limit": request.memory_limit,
-        "memory_limit_bytes": memory_limit_bytes,
         "output_path_options": asdict(request.output_path_options),
         "delimiter": delimiter,
         "compression": request.compression,
@@ -472,18 +458,6 @@ def _normalize_delimiter(delimiter: str | None) -> str | None:
             f"delimiter must be one of {sorted(SUPPORTED_DELIMITERS)}"
         )
     return delimiter
-
-
-def _parse_memory_limit(value: str) -> int:
-    _require_non_empty("memory_limit", value)
-    match = MEMORY_LIMIT_RE.match(value)
-    if not match:
-        raise ConfigValidationError(
-            "memory_limit must look like '4 GB', '512 MB', or '1024 KB'"
-        )
-    amount = int(match.group(1))
-    unit = match.group(2).upper()
-    return amount * UNIT_TO_BYTES[unit]
 
 
 def _require_non_empty(field_name: str, value: str) -> None:

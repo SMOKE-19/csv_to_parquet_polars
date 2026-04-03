@@ -71,7 +71,6 @@ result = convert_csv_to_parquet_simple(
         "amount": "float32",
     },
     index_source_column="code",
-    memory_limit="4 GB",
 )
 print(result.output_dataset_dir)
 PY
