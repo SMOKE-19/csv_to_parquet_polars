@@ -1,54 +1,51 @@
-# csv_to_parquet_polars
+# `csv_to_parquet_polars`
 
-Python `polars` 기반 CSV -> Parquet 변환 패키지다.
+`csv_to_parquet_polars`는 CSV 파일을 Polars 기반으로 읽어 Parquet dataset 디렉터리로 변환하는 Python 패키지다.
 
-현재 디렉토리는 메모리 사용량을 낮추기 위해 chunk 기반 dataset 출력 방식으로 구성된 `polars` 구현이다.
+실제 import 경로는 `csv_to_parquet` 이다.
 
-## 현재 상태
+## 현재 구조
 
-- 공개 API:
-  - `convert_csv_to_parquet_simple()`
-- 구현 방식:
-  - pure Python
-  - `polars.scan_csv().collect_batches()`
-  - chunk 단위 eager transform
-  - dataset directory + `part-xxxxx.parquet`
-- 주요 기능:
-  - header 읽기
-  - delimiter 자동 판별
-  - 중복 header rename
-  - `column_type_map`에 전달한 Polars dtype 기반 캐스팅
-  - 미지정 컬럼 `pl.Float32`
-  - cast failure 디버그 수집
-  - `__source`, `index_A`, `index_B` 생성
+- `pyproject.toml`: 패키지 메타데이터
+- `src/csv_to_parquet/__init__.py`: 공개 API 노출
+- `src/csv_to_parquet/api.py`: 변환 로직
+- `src/csv_to_parquet/models.py`: 요청/응답 dataclass
+- `src/csv_to_parquet/exceptions.py`: 예외 타입
 
-## 디렉토리 구조
+## 주요 기능
 
-- [`pyproject.toml`](./pyproject.toml)
-  - Python 패키징 설정
-- [`USAGE.md`](./USAGE.md)
-  - 공개 API 사용 예시
-- [`src/csv_to_parquet/api.py`](./src/csv_to_parquet/api.py)
-  - Polars 기반 변환 구현
-- [`src/csv_to_parquet/models.py`](./src/csv_to_parquet/models.py)
-  - request/result dataclass
-- [`src/csv_to_parquet/exceptions.py`](./src/csv_to_parquet/exceptions.py)
-  - 예외 타입
+- `convert_csv_to_parquet()`
+  - 요청 dataclass를 받아 변환 수행
 
-## 로컬 개발 메모
+- `convert_csv_to_parquet_simple()`
+  - 경로와 타입 매핑만 바로 넘겨서 간단히 호출 가능
 
-- 이 프로젝트는 Rust extension을 사용하지 않는다.
-- 벤치마크와 실행은 `polars`가 설치된 Python 환경에서 돌려야 한다.
-- 현재 프로젝트에서는 [`../.venv_polars`](../.venv_polars)를 사용했다.
-- 출력은 단일 `.parquet` 파일이 아니라 dataset 디렉토리다.
-- 예: `output_parquet_dir="/data/out"` 이면 `"/data/out/<csv파일명>/part-00000.parquet"` 형태로 저장된다.
+- 자동 구분자 감지
+- batch 단위 Parquet part 파일 생성
+- 변환 결과 요약 반환
+- 필요 시 cast 실패 수집
 
-## 구현 참고
+## 출력 형태
 
-현재 `__source`, `index_A`, `index_B` 칼럼명은 [`api.py`](./src/csv_to_parquet/api.py)에 하드코딩되어 있다.
+출력은 단일 `.parquet` 파일이 아니라 dataset 디렉터리다.
 
-이 프로젝트는 Rust crate를 직접 작성해서 붙인 구조가 아니다.
+예를 들어 입력 파일이 `sample.csv` 이고 출력 루트가 `out/` 이면:
 
-- Rust `pyo3` bridge 없음
-- `rust_src/`, `Cargo.toml`, `target/` 없음
-- 변환 구현은 전부 [`api.py`](./src/csv_to_parquet/api.py)에 있다
+- `out/sample/part-00000.parquet`
+- `out/sample/part-00001.parquet`
+
+같은 형태로 생성된다.
+
+## 설치
+
+```bash
+pip install -e .
+```
+
+## 빠른 확인
+
+```bash
+python -c "from csv_to_parquet import convert_csv_to_parquet_simple; print('ok')"
+```
+
+자세한 사용 예시는 [USAGE.md](./USAGE.md) 를 보면 된다.
