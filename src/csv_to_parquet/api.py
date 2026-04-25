@@ -102,20 +102,17 @@ def _convert_with_polars(payload: dict) -> dict:
         if column_name not in effective_exclude
     )
 
-    schema_overrides = {name: pl.String for name in normalized_headers}
-    batch_iter = pl.scan_csv(
+    batch_reader = pl.read_csv_batched(
         input_path,
         separator=effective_delimiter,
         has_header=True,
-        schema_overrides=schema_overrides,
-        new_columns=normalized_headers,
-        infer_schema=False,
+        schema_overrides=[pl.String] * len(normalized_headers),
+        infer_schema_length=0,
         truncate_ragged_lines=False,
         row_index_name=ROW_NUMBER_COLUMN_NAME,
         row_index_offset=1,
-    ).collect_batches(
-        chunk_size=payload["max_rows_per_chunk"],
-        maintain_order=True,
+        batch_size=payload["max_rows_per_chunk"],
+        n_threads=payload["parser_workers"],
     )
 
     if dataset_dir.exists():
@@ -129,34 +126,35 @@ def _convert_with_polars(payload: dict) -> dict:
     cast_failure_total_count = 0
     derived_failure_count = 0
 
-    for batch in batch_iter:
-        if batch.height == 0:
-            continue
-        transformed, batch_debug = _transform_batch(
-            batch=batch,
-            payload=payload,
-            input_path=input_path,
-            normalized_headers=normalized_headers,
-            effective_exclude=effective_exclude,
-            output_columns=output_columns,
-            remaining_failure_budget=payload["cast_failure_limit"] - len(cast_failures),
-        )
+    while batches := batch_reader.next_batches(1):
+        for batch in batches:
+            if batch.height == 0:
+                continue
+            batch = _rename_csv_columns(batch, normalized_headers)
+            transformed, batch_debug = _transform_batch(
+                batch=batch,
+                payload=payload,
+                input_path=input_path,
+                normalized_headers=normalized_headers,
+                effective_exclude=effective_exclude,
+                output_columns=output_columns,
+                remaining_failure_budget=payload["cast_failure_limit"] - len(cast_failures),
+            )
 
-        if payload["debug_collect_failures"]:
-            cast_failures.extend(batch_debug["cast_failures"])
-            cast_failure_total_count += batch_debug["cast_failure_total_count"]
-            derived_failure_count += batch_debug["derived_failure_count"]
+            if payload["debug_collect_failures"]:
+                cast_failures.extend(batch_debug["cast_failures"])
+                cast_failure_total_count += batch_debug["cast_failure_total_count"]
+                derived_failure_count += batch_debug["derived_failure_count"]
 
-        part_path = dataset_dir / f"part-{part_count:05d}.parquet"
-        transformed.write_parquet(
-            part_path,
-            compression=_map_compression(payload["compression"]),
-            row_group_size=payload["max_rows_per_batch"],
-            mkdir=True,
-        )
-        part_count += 1
-        total_rows += transformed.height
-        max_batch_size = max(max_batch_size, transformed.height)
+            part_path = dataset_dir / f"part-{part_count:05d}.parquet"
+            transformed.write_parquet(
+                part_path,
+                compression=_map_compression(payload["compression"]),
+                row_group_size=payload["max_rows_per_batch"],
+            )
+            part_count += 1
+            total_rows += transformed.height
+            max_batch_size = max(max_batch_size, transformed.height)
 
     return {
         "output_parquet_dir": str(output_root_dir),
@@ -176,6 +174,15 @@ def _convert_with_polars(payload: dict) -> dict:
         "effective_exclude_columns": effective_exclude,
         "normalized_columns": output_columns,
     }
+
+
+def _rename_csv_columns(batch: pl.DataFrame, normalized_headers: list[str]) -> pl.DataFrame:
+    csv_columns = [name for name in batch.columns if name != ROW_NUMBER_COLUMN_NAME]
+    if len(csv_columns) != len(normalized_headers):
+        raise ConfigValidationError(
+            f"CSV column count changed while reading: expected {len(normalized_headers)}, got {len(csv_columns)}"
+        )
+    return batch.rename(dict(zip(csv_columns, normalized_headers, strict=True)))
 
 
 def _transform_batch(
